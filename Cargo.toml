@@ -1,0 +1,10 @@
+[package]
+name = "wordle-solver"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dialoguer = "0.12.0"
+ansi_term = "0.12.1"
+termion = "*"
+rand = "*"
