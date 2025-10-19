@@ -3,9 +3,10 @@
 pub mod wordle {
     use std::{collections::{HashMap, HashSet}, fmt::Error, fs};
     use dialoguer::Input;
-    use ansi_term::Color::{Black,Yellow,Green,White,Red};
+    use ansi_term::Color::{Black,Yellow,Green,White,Red,RGB};
+    use ansi_term::ANSIString;
     use termion::{clear, cursor};
-    use rand::Rng;
+    use rand;
 
     pub struct Secret {
         secret: String,
@@ -30,6 +31,7 @@ pub mod wordle {
     pub struct Game {
         secret: Secret,
         feedback: Vec<[isize; 5]>,
+        history: Vec<[isize; 5]>,
         pub guesses: Vec<String>,
         limit: usize,
         pub valid_guesses: HashSet<String>,
@@ -53,6 +55,11 @@ pub mod wordle {
                 if g_char == secret_letters[i] {
                     feedback[i] = 2;
                     hashmap_upsert(&mut counts, &g_char);
+                }
+            }
+            for (i, g_char) in guess.chars().enumerate() {
+                if g_char == secret_letters[i] {
+                    continue;
                 } else if secret_letters.contains(&g_char) {
                     let gchar_count = self.letter_counts.get(&g_char)
                     .unwrap_or_else(|| &0);
@@ -88,6 +95,7 @@ pub mod wordle {
 
         pub fn new_game() -> Game {
             let feedback: Vec<[isize; 5]> = Vec::new();
+            let history: Vec<[isize; 5]> = Vec::new();
             let guesses: Vec<String> = Vec::new();
             let limit = 6;
             
@@ -103,9 +111,63 @@ pub mod wordle {
             let valid_guesses = HashSet::from_iter(valid_guesses.
                 union(&valid_answers).map(|x| String::from(x)));
 
-            Game {secret, feedback, guesses, limit, valid_guesses, valid_answers}
+            Game {secret, feedback, history, guesses, limit, valid_guesses, valid_answers}
+        }
+        fn clear_keyboard() -> () {
+            for _ in 0..4 {
+                print!("{}", cursor::Up(1));
+                print!("{}", clear::CurrentLine); 
+            }
         }
 
+        fn display_keyboard(&self) -> () {
+            let letters = "QWERTYUIOPASDFGHJKLZXCVBNM";
+            let mut keyboard: HashMap<char, isize> = HashMap::new();
+            
+            for g in 0..self.guesses.len() {
+                let guess = self.guesses[g].clone();
+                for i in 0..5 {
+                    let code = self.feedback[g][i];
+                    let char = guess.chars().nth(i).expect("never asks for index > 5");
+                    keyboard.insert(char, code);
+                }
+            }
+            
+            for char in letters.chars() {
+                keyboard.entry(char).or_insert(3);
+            }
+            
+            let mut print_letters = Vec::new();
+
+            for char in letters.chars() {
+                let code = keyboard.get(&char);
+                let print_letter =  match code.unwrap() {
+                    0 => Black.on(Black)
+                        .paint(format!(" {} ", char)),
+                    1 => Black.on(Yellow)
+                        .paint(format!(" {} ", char)),
+                    2 => Black.on(Green)
+                        .paint(format!(" {} ", char)),
+                    3 => White.on(Black)
+                        .paint(format!(" {} ", char)),
+                    _ => continue,
+                };
+                print_letters.push(print_letter)
+            }
+            for p in print_letters.iter() {
+                
+                if p.to_string().chars().nth(9).expect("str len known") == 'Q' {
+                    print!("\n\t\t\t");
+                } else if p.to_string().chars().nth(9).expect("str len known") == 'A' {
+                    print!("\n\t\t\t  ")
+                } else if p.to_string().chars().nth(9).expect("str len known") == 'Z' {
+                    print!("\n\t\t\t    ")
+                }
+                print!("{}", p);
+            }
+            print!("\n");
+
+        }
         pub fn take_turn(&mut self) -> String {
             
             let mut guess: String;
@@ -157,9 +219,6 @@ pub mod wordle {
                 print_line.push(display_letter);
             }
             print!("\t\t\t");
-
-            
-
             for p in print_line.iter() {
                 print!("|{}", p);
                 // can add sleep statement here
@@ -209,12 +268,18 @@ pub mod wordle {
             // loop taking turns until limit or w
             let mut feedback: [isize; 5] = [0, 0, 0, 0, 0];
             let mut turn: usize = 0;
+
             while feedback != [2, 2, 2, 2, 2] && turn < self.limit {
+                if turn > 0 {
+                    Game::clear_keyboard();
+                }
                 let guess = self.take_turn();
                 feedback = self.secret.check_guess(&guess);
-                Game::print_result(&feedback, &guess);
-                self.guesses.push(guess);
+                self.history.push(feedback.clone());
+                self.guesses.push(guess.clone());
                 self.feedback.push(feedback.clone());
+                Game::print_result(&feedback, &guess);
+                Game::display_keyboard(&self);
                 turn += 1;    
             }
             if feedback == [2, 2, 2, 2, 2] {
@@ -243,6 +308,12 @@ mod tests {
         let feedback = sec.check_guess(&guess);
 
         assert_eq!(feedback, [2, 1, 0, 0, 0]);
+
+        let sec = Secret::new_with_set_secret("DELVE");
+        let guess = String::from("REEVE");
+        let feedback = sec.check_guess(&guess);
+
+        assert_eq!(feedback, [0,2,0,2,2]);
     }
     #[test]
     fn test_new_game() -> () {
